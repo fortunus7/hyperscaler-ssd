@@ -3,11 +3,9 @@
  * then compared only against normalized values that were publicly disclosed for each profile.
  */
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
-import { BadgeCheck, ChevronRight, CircleAlert, FileDown, FileUp, Loader2, Plus, Save, ShieldCheck, Trash2, Upload } from "lucide-react";
-import { startLogin } from "@/const";
-import { useAuth } from "@/_core/hooks/useAuth";
+import { BadgeCheck, CircleAlert, FileDown, FileUp, Save, ShieldCheck, Trash2 } from "lucide-react";
 import { profiles } from "@/data/hyperscalers";
-import { trpc } from "@/lib/trpc";
+import { addLocalSsdCandidates, readLocalSsdCandidates, removeLocalSsdCandidate, writeLocalSsdCandidates, type LocalSsdCandidate } from "@/lib/localSsdCandidates";
 import { compareCandidateToReference, type MetricAssessment, type SsdCandidateMetrics } from "@shared/ssdComparison";
 import { SsdFitAnalysisPanel } from "@/components/SsdFitAnalysisPanel";
 
@@ -178,32 +176,19 @@ function statusStyle(status: MetricAssessment["status"]) {
 }
 
 export function CandidateWorkbench() {
-  const { isAuthenticated, loading: authLoading } = useAuth();
-  const utils = trpc.useUtils();
   const [draft, setDraft] = useState<CandidateDraft>(blankDraft);
   const [targetProfileId, setTargetProfileId] = useState("gcp-z3");
   const [activeCandidateId, setActiveCandidateId] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const candidatesQuery = trpc.ssdCandidate.list.useQuery(undefined, { enabled: isAuthenticated });
-  const createMutation = trpc.ssdCandidate.create.useMutation({
-    onSuccess: async () => { setDraft(blankDraft()); setMessage("후보 SSD를 저장했습니다."); await utils.ssdCandidate.list.invalidate(); },
-    onError: (mutationError) => setError(mutationError.message),
-  });
-  const importMutation = trpc.ssdCandidate.importMany.useMutation({
-    onSuccess: async (result) => { setMessage(`${result.imported}개 후보 SSD를 저장했습니다.`); await utils.ssdCandidate.list.invalidate(); },
-    onError: (mutationError) => setError(mutationError.message),
-  });
-  const deleteMutation = trpc.ssdCandidate.delete.useMutation({
-    onSuccess: async () => { setMessage("후보 SSD를 삭제했습니다."); await utils.ssdCandidate.list.invalidate(); },
-    onError: (mutationError) => setError(mutationError.message),
-  });
+  const [candidates, setCandidates] = useState<LocalSsdCandidate[]>(() => readLocalSsdCandidates(window.localStorage));
+  useEffect(() => { writeLocalSsdCandidates(window.localStorage, candidates); }, [candidates]);
 
   useEffect(() => {
-    if (activeCandidateId === null && candidatesQuery.data?.[0]) setActiveCandidateId(candidatesQuery.data[0].id);
-  }, [activeCandidateId, candidatesQuery.data]);
+    if (activeCandidateId === null && candidates[0]) setActiveCandidateId(candidates[0].id);
+  }, [activeCandidateId, candidates]);
 
-  const activeCandidate = candidatesQuery.data?.find((candidate) => candidate.id === activeCandidateId) ?? candidatesQuery.data?.[0];
+  const activeCandidate = candidates.find((candidate) => candidate.id === activeCandidateId) ?? candidates[0];
   const targetProfile = profiles.find((profile) => profile.id === targetProfileId) ?? profiles[0];
   const analysis = useMemo(() => {
     if (!activeCandidate) return null;
@@ -223,7 +208,9 @@ export function CandidateWorkbench() {
   const saveDraft = () => {
     setMessage(null); setError(null);
     if (!draft.model.trim() || !draft.capacityGb || !Number.isFinite(Number(draft.capacityGb))) { setError("모델명과 유효한 용량(GB)은 필수입니다."); return; }
-    createMutation.mutate(toInput(draft));
+    setCandidates((current) => addLocalSsdCandidates(current, [toInput(draft)]));
+    setDraft(blankDraft());
+    setMessage("후보 SSD를 이 브라우저에 저장했습니다.");
   };
   const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -231,10 +218,12 @@ export function CandidateWorkbench() {
     setMessage(null); setError(null);
     try {
       const parsed = parseCsv(await file.text(), file.name);
-      importMutation.mutate({ candidates: parsed.map(toInput) });
+      setCandidates((current) => addLocalSsdCandidates(current, parsed.map(toInput)));
+      setMessage(`${parsed.length}개 후보 SSD를 이 브라우저에 저장했습니다.`);
     } catch (parseError) { setError(parseError instanceof Error ? parseError.message : "파일을 해석하지 못했습니다."); }
     event.target.value = "";
   };
+  const removeCandidate = (id: number) => { setCandidates((current) => removeLocalSsdCandidate(current, id)); setActiveCandidateId((current) => current === id ? null : current); setMessage("후보 SSD를 삭제했습니다."); setError(null); };
   const downloadTemplate = () => {
     const header = "manufacturer,model,formFactor,capacityGb,pcieGen,nvmeVersion,readIops,writeIops,readMBps,writeMBps,dwpd,enduranceTbw,powerActiveW,plp,encryption,sourceUrl,notes\n";
     const url = URL.createObjectURL(new Blob([header], { type: "text/csv;charset=utf-8" }));
@@ -243,9 +232,9 @@ export function CandidateWorkbench() {
 
   return <section id="candidates" className="border-y border-[#17202A]/12 bg-[#F7F4ED] px-4 py-10 sm:px-7 lg:px-10 lg:py-12">
     <div className="mx-auto max-w-[1380px]">
-      <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end"><div><p className="font-mono-ui text-[10px] font-medium tracking-[0.16em] text-[#E65B32]">05 · INTERNAL CANDIDATE WORKBENCH</p><h2 className="font-display mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">후보 SSD를, 공개 기준 위에 올립니다.</h2></div><p className="max-w-lg text-xs leading-5 text-[#6B6D69]">Samsung, SK hynix, Micron, KIOXIA, SanDisk, DapuStor의 내부 후보 사양을 사용자별로 저장하고, 공개된 드라이브 기준값과만 비교합니다.</p></div>
+      <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end"><div><p className="font-mono-ui text-[10px] font-medium tracking-[0.16em] text-[#E65B32]">05 · INTERNAL CANDIDATE WORKBENCH</p><h2 className="font-display mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">후보 SSD를, 공개 기준 위에 올립니다.</h2></div><p className="max-w-lg text-xs leading-5 text-[#6B6D69]">Samsung, SK hynix, Micron, KIOXIA, SanDisk, DapuStor의 후보 사양을 현재 브라우저에 저장하고, 공개된 드라이브 기준값과만 비교합니다.</p></div>
 
-      {!authLoading && !isAuthenticated ? <div className="mt-6 grid gap-5 border border-[#17202A]/14 bg-[#FFFDF8] p-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-center"><div><div className="flex items-center gap-2 text-[#E65B32]"><ShieldCheck className="h-5 w-5" /><span className="font-mono-ui text-[10px] tracking-[.12em]">PRIVATE CANDIDATE LIBRARY</span></div><h3 className="font-display mt-3 text-xl font-semibold">내부 후보군은 로그인 후에만 저장·열람됩니다.</h3><p className="mt-2 max-w-2xl text-sm leading-6 text-[#59636B]">후보 모델명과 성능, PCIe, DWPD, PLP·암호화 검증 상태를 사용자 계정에 연결합니다. 하이퍼스케일러의 비공개 BOM이나 승인 상태를 의미하지 않습니다.</p></div><button onClick={() => startLogin({ force: true })} className="inline-flex h-11 items-center justify-center gap-2 rounded-sm bg-[#17202A] px-5 text-sm font-semibold text-white transition hover:bg-[#243241] active:scale-[.98]">후보군 시작하기 <ChevronRight className="h-4 w-4 text-[#E65B32]" /></button></div> : <>
+      <div className="mt-6 border border-[#315A7D]/20 bg-[#FFFDF8] p-5"><div className="flex items-center gap-2 text-[#315A7D]"><ShieldCheck className="h-5 w-5" /><span className="font-mono-ui text-[10px] tracking-[.12em]">PUBLIC · NO LOGIN REQUIRED</span></div><h3 className="font-display mt-2 text-lg font-semibold">로그인 없이 바로 SSD 후보군을 시작할 수 있습니다.</h3><p className="mt-1 text-sm leading-6 text-[#59636B]">입력 데이터는 계정이나 서버로 전송하지 않고 현재 브라우저에만 저장됩니다. 브라우저 데이터 삭제 또는 다른 기기에서는 목록이 유지되지 않습니다.</p></div>
         <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,.95fr)]">
           <div className="border border-[#17202A]/14 bg-[#FFFDF8] surface-shadow"><div className="flex flex-col gap-4 border-b border-[#17202A]/10 p-5 sm:flex-row sm:items-start sm:justify-between"><div><p className="font-mono-ui text-[10px] tracking-[.13em] text-[#6B6D69]">CANDIDATE INPUT</p><h3 className="font-display mt-1 text-xl font-semibold">사양 등록 또는 CSV 가져오기</h3></div><div className="flex flex-wrap gap-2"><button onClick={downloadTemplate} className="inline-flex items-center gap-1.5 rounded-sm border border-[#17202A]/16 px-3 py-2 text-xs font-semibold hover:border-[#315A7D] hover:text-[#315A7D]"><FileDown className="h-3.5 w-3.5" />빈 템플릿</button><label className="inline-flex cursor-pointer items-center gap-1.5 rounded-sm bg-[#E65B32] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#cf4e29]"><FileUp className="h-3.5 w-3.5" />CSV/TSV 가져오기<input onChange={handleFile} type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values" className="sr-only" /></label></div></div>
             <div className="grid gap-x-4 gap-y-4 p-5 sm:grid-cols-2">
@@ -266,7 +255,7 @@ export function CandidateWorkbench() {
               <label className="text-xs font-semibold sm:col-span-2">출처 URL<input value={draft.sourceUrl} onChange={(event) => updateDraft("sourceUrl", event.target.value)} placeholder="https:// — 내부 링크 또는 공식 데이터시트" className="mt-1.5 h-10 w-full rounded-sm border border-[#17202A]/15 bg-white px-3 text-sm font-normal outline-none focus:border-[#E65B32]" /></label>
               <label className="text-xs font-semibold sm:col-span-2">메모<textarea value={draft.notes} onChange={(event) => updateDraft("notes", event.target.value)} placeholder="측정 블록 크기, QD, 온도 조건, 펌웨어 등 비교에 필요한 맥락" className="mt-1.5 min-h-20 w-full rounded-sm border border-[#17202A]/15 bg-white p-3 text-sm font-normal outline-none focus:border-[#E65B32]" /></label>
             </div>
-            <div className="flex flex-col gap-3 border-t border-[#17202A]/10 bg-[#FBF9F3] p-5 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs leading-5 text-[#6B6D69]">필수값은 제조사·모델·용량입니다. 비어 있는 성능 값은 분석에서 <strong>후보 입력 필요</strong>로 표시됩니다.</p><button onClick={saveDraft} disabled={createMutation.isPending} className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-sm bg-[#17202A] px-4 text-sm font-semibold text-white transition hover:bg-[#243241] disabled:opacity-50"><Save className="h-4 w-4 text-[#E65B32]" />{createMutation.isPending ? "저장 중" : "후보 저장"}</button></div>
+            <div className="flex flex-col gap-3 border-t border-[#17202A]/10 bg-[#FBF9F3] p-5 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs leading-5 text-[#6B6D69]">필수값은 제조사·모델·용량입니다. 비어 있는 성능 값은 분석에서 <strong>후보 입력 필요</strong>로 표시됩니다.</p><button onClick={saveDraft} className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-sm bg-[#17202A] px-4 text-sm font-semibold text-white transition hover:bg-[#243241]"><Save className="h-4 w-4 text-[#E65B32]" />후보 저장</button></div>
           </div>
 
           <div className="border border-[#17202A]/14 bg-[#17202A] p-5 text-[#FFFDF8] surface-shadow"><p className="font-mono-ui text-[10px] tracking-[.13em] text-[#F3A58C]">IMPORT CONTRACT</p><h3 className="font-display mt-2 text-xl font-semibold">텍스트 사양을 구조화합니다.</h3><p className="mt-3 text-sm leading-6 text-[#C8D2D7]">CSV/TSV는 브라우저에서 해석한 뒤 후보 레코드로 저장합니다. 원본 파일 자체는 저장하지 않으므로, 내부 데이터시트는 조직의 보안 저장소에서 별도로 관리하세요.</p><div className="mt-6 border-y border-white/12 py-4 font-mono-ui text-[10px] leading-6 text-[#B7C6D1]">필수 열<br /><span className="text-white">manufacturer · model · capacityGb</span><br /><br />선택 열<br />formFactor · pcieGen · nvmeVersion · readIops · writeIops · readMBps · writeMBps · dwpd · enduranceTbw · plp · encryption · sourceUrl · notes</div><div className="mt-5 flex items-start gap-2 text-xs leading-5 text-[#DCE4E7]"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-[#E65B32]" />IOPS·처리량은 워크로드 및 블록 크기가 일치할 때만 해석 가능합니다. 점수는 조달 승인이나 벤치마크 결과가 아닙니다.</div></div>
@@ -275,13 +264,12 @@ export function CandidateWorkbench() {
         {message && <p className="mt-4 flex items-center gap-2 rounded-sm border border-[#5F8E84]/25 bg-[#5F8E84]/10 px-4 py-3 text-sm text-[#315e54]"><BadgeCheck className="h-4 w-4" />{message}</p>}
         {error && <p className="mt-4 flex items-center gap-2 rounded-sm border border-[#E65B32]/28 bg-[#E65B32]/10 px-4 py-3 text-sm text-[#B84826]"><CircleAlert className="h-4 w-4" />{error}</p>}
 
-        <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,.85fr)_minmax(0,1.15fr)]"><div className="border border-[#17202A]/14 bg-[#FFFDF8] surface-shadow"><div className="flex items-center justify-between border-b border-[#17202A]/10 p-5"><div><p className="font-mono-ui text-[10px] tracking-[.13em] text-[#6B6D69]">MY CANDIDATE LIBRARY</p><h3 className="font-display mt-1 text-xl font-semibold">저장된 후보</h3></div><span className="rounded-full bg-[#EAE5DB] px-2.5 py-1 font-mono-ui text-[10px]">{candidatesQuery.data?.length ?? 0}</span></div>{candidatesQuery.isLoading ? <div className="flex items-center gap-2 p-6 text-sm text-[#6B6D69]"><Loader2 className="h-4 w-4 animate-spin" />후보군 불러오는 중</div> : candidatesQuery.data?.length ? <div className="divide-y divide-[#17202A]/10">{candidatesQuery.data.map((candidate) => <div key={candidate.id} className={`flex items-center gap-3 p-4 transition ${activeCandidate?.id === candidate.id ? "bg-[#F5EFE5]" : "hover:bg-[#FBF9F3]"}`}><button onClick={() => setActiveCandidateId(candidate.id)} className="min-w-0 flex-1 text-left"><div className="flex items-center gap-2"><span className="rounded-full border border-[#315A7D]/20 bg-[#315A7D]/8 px-2 py-0.5 font-mono-ui text-[9px] text-[#315A7D]">{candidate.manufacturer}</span><span className="font-mono-ui text-[10px] text-[#6B6D69]">{candidate.capacityGb.toLocaleString()} GB</span></div><p className="mt-2 truncate text-sm font-semibold">{candidate.model}</p><p className="mt-0.5 truncate text-[11px] text-[#6B6D69]">{candidate.formFactor ?? "폼팩터 미입력"} · {candidate.pcieGen ?? "PCIe 미입력"} · {candidate.dwpd ?? "DWPD 미입력"}</p></button><button onClick={() => deleteMutation.mutate({ id: candidate.id })} aria-label={`${candidate.model} 삭제`} className="rounded-sm p-2 text-[#7A7D79] transition hover:bg-[#E65B32]/10 hover:text-[#E65B32]"><Trash2 className="h-4 w-4" /></button></div>)}</div> : <div className="p-6"><p className="font-display text-lg font-semibold">아직 저장된 후보가 없습니다.</p><p className="mt-2 text-sm leading-6 text-[#6B6D69]">수동으로 첫 후보를 등록하거나 CSV/TSV 파일을 가져오세요.</p></div>}</div>
+        <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,.85fr)_minmax(0,1.15fr)]"><div className="border border-[#17202A]/14 bg-[#FFFDF8] surface-shadow"><div className="flex items-center justify-between border-b border-[#17202A]/10 p-5"><div><p className="font-mono-ui text-[10px] tracking-[.13em] text-[#6B6D69]">LOCAL CANDIDATE LIBRARY</p><h3 className="font-display mt-1 text-xl font-semibold">이 브라우저에 저장된 후보</h3></div><span className="rounded-full bg-[#EAE5DB] px-2.5 py-1 font-mono-ui text-[10px]">{candidates.length}</span></div>{candidates.length ? <div className="divide-y divide-[#17202A]/10">{candidates.map((candidate) => <div key={candidate.id} className={`flex items-center gap-3 p-4 transition ${activeCandidate?.id === candidate.id ? "bg-[#F5EFE5]" : "hover:bg-[#FBF9F3]"}`}><button onClick={() => setActiveCandidateId(candidate.id)} className="min-w-0 flex-1 text-left"><div className="flex items-center gap-2"><span className="rounded-full border border-[#315A7D]/20 bg-[#315A7D]/8 px-2 py-0.5 font-mono-ui text-[9px] text-[#315A7D]">{candidate.manufacturer}</span><span className="font-mono-ui text-[10px] text-[#6B6D69]">{candidate.capacityGb.toLocaleString()} GB</span></div><p className="mt-2 truncate text-sm font-semibold">{candidate.model}</p><p className="mt-0.5 truncate text-[11px] text-[#6B6D69]">{candidate.formFactor ?? "폼팩터 미입력"} · {candidate.pcieGen ?? "PCIe 미입력"} · {candidate.dwpd ?? "DWPD 미입력"}</p></button><button onClick={() => removeCandidate(candidate.id)} aria-label={`${candidate.model} 삭제`} className="rounded-sm p-2 text-[#7A7D79] transition hover:bg-[#E65B32]/10 hover:text-[#E65B32]"><Trash2 className="h-4 w-4" /></button></div>)}</div> : <div className="p-6"><p className="font-display text-lg font-semibold">아직 저장된 후보가 없습니다.</p><p className="mt-2 text-sm leading-6 text-[#6B6D69]">수동으로 첫 후보를 등록하거나 CSV/TSV 파일을 가져오세요.</p></div>}</div>
 
           <div className="border border-[#17202A]/14 bg-[#FFFDF8] surface-shadow"><div className="flex flex-col gap-4 border-b border-[#17202A]/10 p-5 sm:flex-row sm:items-end sm:justify-between"><div><p className="font-mono-ui text-[10px] tracking-[.13em] text-[#6B6D69]">PUBLIC REFERENCE GAP</p><h3 className="font-display mt-1 text-xl font-semibold">후보 × 하이퍼스케일러 프로파일</h3></div><label className="text-xs font-semibold">비교 프로파일<select value={targetProfileId} onChange={(event) => setTargetProfileId(event.target.value)} className="mt-1.5 h-9 w-full min-w-[240px] rounded-sm border border-[#17202A]/15 bg-white px-3 text-xs font-normal outline-none focus:border-[#E65B32]">{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.provider} · {profile.profile}</option>)}</select></label></div>
             {analysis && activeCandidate ? <div><div className="grid gap-px border-b border-[#17202A]/10 bg-[#17202A]/10 sm:grid-cols-3"><div className="bg-[#FFFDF8] p-5"><p className="font-mono-ui text-[10px] tracking-[.1em] text-[#6B6D69]">CANDIDATE</p><p className="font-display mt-2 text-lg font-semibold">{activeCandidate.model}</p><p className="mt-1 text-xs text-[#6B6D69]">{activeCandidate.manufacturer}</p></div><div className="bg-[#FFFDF8] p-5"><p className="font-mono-ui text-[10px] tracking-[.1em] text-[#6B6D69]">PUBLIC REFERENCE</p><p className="font-display mt-2 text-lg font-semibold">{targetProfile.provider}</p><p className="mt-1 text-xs text-[#6B6D69]">{targetProfile.profile}</p></div><div className="bg-[#17202A] p-5 text-white"><p className="font-mono-ui text-[10px] tracking-[.1em] text-[#F3A58C]">COVERAGE SCORE</p><p className="font-display mt-1 text-3xl font-semibold">{analysis.score === null ? "—" : `${analysis.score}%`}</p><p className="mt-1 text-xs text-[#B7C6D1]">공개·비교 가능 {analysis.comparableCount}개</p></div></div><div className="divide-y divide-[#17202A]/10">{analysis.metrics.map((metric) => <div key={metric.key} className="grid grid-cols-[minmax(88px,.8fr)_minmax(100px,1fr)_minmax(100px,1fr)_auto] items-center gap-2 p-4 text-xs"><span className="font-mono-ui text-[10px] tracking-[.04em] text-[#59636B]">{metricLabel(metric.key)}</span><span className="font-medium text-[#17202A]">{formatMetric(metric, metric.candidate)}</span><span className="text-[#6B6D69]">{formatMetric(metric, metric.reference)}</span><span className={`justify-self-end rounded-full px-2 py-1 text-[10px] font-medium ${statusStyle(metric.status)}`}>{statusText(metric.status)}</span></div>)}</div><div className="border-t border-[#17202A]/10 bg-[#FBF9F3] p-4 text-xs leading-5 text-[#6B6D69]"><strong className="text-[#17202A]">해석 범위.</strong> 기준값은 공개 인스턴스의 드라이브 단위 수치 또는 균등 환산 참고값입니다. PCIe·DWPD·폼팩터가 공개되지 않은 경우에는 후보가 우수/열세로 판정되지 않습니다.</div></div> : <div className="p-7"><p className="font-display text-xl font-semibold">비교할 후보를 선택하세요.</p><p className="mt-2 text-sm leading-6 text-[#6B6D69]">후보가 저장되면 용량, IOPS, 처리량, PCIe, DWPD의 공개성·입력 상태·갭을 함께 보여줍니다.</p></div>}
           </div></div>
         <SsdFitAnalysisPanel candidate={activeCandidate} />
-      </>}
     </div>
   </section>;
 }
