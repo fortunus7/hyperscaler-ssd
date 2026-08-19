@@ -1,0 +1,26 @@
+{
+  "matcherResult": {
+    "clicked": true,
+    "innerWidth": 390,
+    "documentScrollWidth": 390,
+    "bodyScrollWidth": 390,
+    "pressed": [
+      "Dell TechnologiesPowerEdge R6601U2.5-inch·U.2·10 bays / E3.S·E3.S·16 bays",
+      "SamsungPM1743 2.5-inch 15.36TB2.5-inch · U.215.4 TB·PCIe Gen5·읽기 중심"
+    ],
+    "live": [
+      "Dell Technologies PowerEdge R660와 Samsung PM1743 2.5-inch 15.36TB. 판정: 물리·링크 기준 호환. 물리 규격·인터페이스 호환, PCIe 링크 호환, Raw 용량 호환, SSD 전력 미공개. Raw 용량 153.6 TB, SSD active power N/D.",
+      "검색 결과 6개"
+    ],
+    "matcherText": "01 · HARDWARE MATCHER서버와 SSD를 클릭해 공개 규격을 맞춥니다.서버 16종 · SSD 14종 · 제조사 12개 범위 · 데이터 기준 2026.08.19. 결과는 실제 출하 BOM이나 조달 승인을 보증하지 않습니다.상세 근거 보기A 개별 공식 사양B 공식 제품군 자료C 공식 자료의 제한적 값물리·링크 기준 호환153.6 TB · N/DPowerEdge R660 × PM1743 2.5-inch 15.36TBDell Technologies PowerEdge R660와 Samsung PM1743 2.5-inch 15.36TB. 판정: 물리·링크 기준 호환. 물리 규격·인터페이스 호환, PCIe 링크 호환, Raw 용량 호환, SSD 전력 미공개. Raw 용량 153.6 TB, SSD active power N/D. 서버 선택16 / 16서버 검색서버 제조사 필터모든 서버 제조사Dell TechnologiesHPELenovoNVIDIASupermicroDell TechnologiesPowerEdge R6601U2.5-inch·U.2·10 bays / E3.S·E3.S·16 baysDell TechnologiesPowerEdge R7602U2.5-inch·인터페이스 N/D·베이 N/D / E3.S·E3.S·베이 N/DDell TechnologiesPowerEdge R760xd22U2.5-inch·인터페이스 N/D·베이 N/DDell TechnologiesPowerEdge R76252U2.5-inch·인터페이스 N/D·베이 N/D / E3.S·E3.S·베이 N/DHPEProLiant DL360 Gen111U2.5-inch·인터페이스 N/D·베이 N/D / E3.S·E3.S·베이 N/DHPEProLiant DL380 Gen112U2.5-inch·인터페이스 N/D·베이 N/D / ",
+    "dateVisible": true,
+    "evidenceTarget": "#profiles"
+  },
+  "profileReveal": {
+    "clicked": true,
+    "before": 0,
+    "after": 7267,
+    "activeElementId": "profile-detail",
+    "heading": "Tencent Cloud/ITA5.128XLARGE2304"
+  }
+}

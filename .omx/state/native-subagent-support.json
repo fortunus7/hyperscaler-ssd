@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "status": "unsupported",
+  "reason": "multi_agent_v1_unavailable",
+  "session_id": "01a016d1-7ea3-7b01-992e-656da4bb42be",
+  "turn_id": "01a016d3-9c86-7230-9e2f-b09b2e7ee647",
+  "tool_name": "collaborationlist_agents",
+  "evidence": "collaborationlist_agents {\"agents\":[{\"agent_name\":\"/root\",\"agent_status\":\"running\"},{\"agent_name\":\"/root/final_code_review\",\"agent_status\":\"running\"},{\"agent_name\":\"/root/task4_rereview\",\"agent_status\":{\"completed\":\"## Finding Verdicts\\n\\n1. **PASS — coherent visible section sequence**\\n\\n Evidence:\\n\\n - `01` — `client/src/components/HardwareMatcher.tsx:288`, rendered from `client/src/pages/Home.tsx:352`\\n - `02` — `client/src/pages/Home.tsx:358`\\n - `03` — `client/src/pages/Home.tsx:589`\\n - `",
+  "observed_at": "2026-08-18T23:10:23.209Z",
+  "cwd": "D:\\dev\\hyperscaler-ssd"
+}

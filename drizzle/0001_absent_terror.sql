@@ -1,0 +1,33 @@
+CREATE TABLE `serverCandidates` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`userId` int NOT NULL,
+	`manufacturer` varchar(64) NOT NULL,
+	`model` varchar(128) NOT NULL,
+	`rackUnits` decimal(5,2),
+	`powerCapacityW` int,
+	`powerSupplyCount` int,
+	`cpuModel` varchar(160),
+	`cpuSockets` int,
+	`cpuCores` int,
+	`memoryGiB` int,
+	`networkGbps` int,
+	`ssdFormFactor` varchar(64),
+	`ssdInterface` varchar(64),
+	`ssdProtocol` varchar(64),
+	`ssdCount` int,
+	`ssdCapacityPerDriveGb` int,
+	`ssdAggregateIops` int,
+	`ssdReadIops` int,
+	`ssdWriteIops` int,
+	`ssdAggregateMBps` int,
+	`ssdReadMBps` int,
+	`ssdWriteMBps` int,
+	`sourceFileName` varchar(255),
+	`sourceUrl` varchar(2048),
+	`notes` text,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `serverCandidates_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE INDEX `serverCandidates_user_idx` ON `serverCandidates` (`userId`);
