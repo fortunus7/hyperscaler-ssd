@@ -86,6 +86,9 @@ export function pinActiveItem<T extends { id: string }>(
   visibleItems: T[],
   activeItem: T
 ): T[] {
+  if (!visibleItems.some(item => item.id === activeItem.id)) {
+    return visibleItems;
+  }
   return [
     activeItem,
     ...visibleItems.filter(item => item.id !== activeItem.id),
@@ -230,6 +233,7 @@ export function HardwareMatcher() {
   const [serverSearch, setServerSearch] = useState("");
   const [serverVendor, setServerVendor] = useState(ALL);
   const [ssdSearch, setSsdSearch] = useState("");
+  const [ssdVendor, setSsdVendor] = useState(ALL);
   const [workloadClass, setWorkloadClass] = useState<
     typeof ALL | WorkloadClass
   >(ALL);
@@ -237,6 +241,10 @@ export function HardwareMatcher() {
   const serverVendors = useMemo(
     () =>
       Array.from(new Set(serverCatalog.map(item => item.manufacturer))).sort(),
+    []
+  );
+  const ssdVendors = useMemo(
+    () => Array.from(new Set(ssdCatalog.map(item => item.manufacturer))).sort(),
     []
   );
   const visibleServers = useMemo(() => {
@@ -254,6 +262,7 @@ export function HardwareMatcher() {
     const search = ssdSearch.trim().toLowerCase();
     return ssdCatalog.filter(
       item =>
+        (ssdVendor === ALL || item.manufacturer === ssdVendor) &&
         (workloadClass === ALL || item.workloadClass === workloadClass) &&
         includesSearch(
           [
@@ -266,7 +275,7 @@ export function HardwareMatcher() {
           search
         )
     );
-  }, [ssdSearch, workloadClass]);
+  }, [ssdSearch, ssdVendor, workloadClass]);
 
   const activeServer =
     serverCatalog.find(item => item.id === serverId) ?? serverCatalog[0];
@@ -275,6 +284,12 @@ export function HardwareMatcher() {
 
   const displayedServers = pinActiveItem(visibleServers, activeServer);
   const displayedSsds = pinActiveItem(visibleSsds, activeSsd);
+  const serverSelectionOutsideFilter = !visibleServers.some(
+    item => item.id === activeServer.id
+  );
+  const ssdSelectionOutsideFilter = !visibleSsds.some(
+    item => item.id === activeSsd.id
+  );
   const result = analyzeHardwareMatch(activeServer, activeSsd);
   const verdict = verdictCopy[result.verdict];
   const requiredChecks = result.checks.filter(item => item.key !== "workload");
@@ -289,6 +304,7 @@ export function HardwareMatcher() {
   };
   const resetSsdFilters = () => {
     setSsdSearch("");
+    setSsdVendor(ALL);
     setWorkloadClass(ALL);
   };
 
@@ -399,6 +415,14 @@ export function HardwareMatcher() {
                 ))}
               </select>
             </label>
+            {serverSelectionOutsideFilter && visibleServers.length > 0 && (
+              <p
+                className="mt-2 text-[10px] leading-4 text-[#7E5F24]"
+                role="status"
+              >
+                현재 선택한 서버는 필터 결과 밖에서 유지됩니다.
+              </p>
+            )}
             <div className="mt-3 max-h-[620px] space-y-2 overflow-y-auto pr-1">
               {displayedServers.map(item => (
                 <ServerButton
@@ -550,29 +574,52 @@ export function HardwareMatcher() {
                 className="w-full bg-transparent text-xs outline-none placeholder:text-[#8B8D89]"
               />
             </label>
-            <label className="mt-2 block">
-              <span className="sr-only">SSD 워크로드 필터</span>
-              <select
-                value={workloadClass}
-                onChange={event =>
-                  setWorkloadClass(
-                    event.target.value as typeof ALL | WorkloadClass
-                  )
-                }
-                className="min-h-11 w-full border border-[#17202A]/16 bg-[#FFFDF8] px-3 text-xs outline-none focus:border-[#315A7D]"
+            <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+              <label className="block">
+                <span className="sr-only">SSD 제조사 필터</span>
+                <select
+                  value={ssdVendor}
+                  onChange={event => setSsdVendor(event.target.value)}
+                  className="min-h-11 w-full border border-[#17202A]/16 bg-[#FFFDF8] px-3 text-xs outline-none focus:border-[#315A7D]"
+                >
+                  <option value={ALL}>모든 SSD 제조사</option>
+                  {ssdVendors.map(vendor => (
+                    <option key={vendor}>{vendor}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="sr-only">SSD 워크로드 필터</span>
+                <select
+                  value={workloadClass}
+                  onChange={event =>
+                    setWorkloadClass(
+                      event.target.value as typeof ALL | WorkloadClass
+                    )
+                  }
+                  className="min-h-11 w-full border border-[#17202A]/16 bg-[#FFFDF8] px-3 text-xs outline-none focus:border-[#315A7D]"
+                >
+                  <option value={ALL}>모든 워크로드 등급</option>
+                  {(
+                    Object.entries(workloadLabels) as Array<
+                      [WorkloadClass, string]
+                    >
+                  ).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {ssdSelectionOutsideFilter && visibleSsds.length > 0 && (
+              <p
+                className="mt-2 text-[10px] leading-4 text-[#7E5F24]"
+                role="status"
               >
-                <option value={ALL}>모든 워크로드 등급</option>
-                {(
-                  Object.entries(workloadLabels) as Array<
-                    [WorkloadClass, string]
-                  >
-                ).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
+                현재 선택한 SSD는 필터 결과 밖에서 유지됩니다.
+              </p>
+            )}
             <div className="mt-3 max-h-[620px] space-y-2 overflow-y-auto pr-1">
               {displayedSsds.map(item => (
                 <SsdButton
@@ -600,16 +647,17 @@ export function HardwareMatcher() {
                 </div>
               )}
             </div>
-            {(ssdSearch || workloadClass !== ALL) && visibleSsds.length > 0 && (
-              <button
-                type="button"
-                onClick={resetSsdFilters}
-                className="mt-3 flex min-h-11 items-center gap-2 text-xs font-semibold text-[#315A7D]"
-              >
-                <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" /> SSD
-                필터 초기화
-              </button>
-            )}
+            {(ssdSearch || ssdVendor !== ALL || workloadClass !== ALL) &&
+              visibleSsds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={resetSsdFilters}
+                  className="mt-3 flex min-h-11 items-center gap-2 text-xs font-semibold text-[#315A7D]"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" /> SSD
+                  필터 초기화
+                </button>
+              )}
           </div>
         </div>
       </div>

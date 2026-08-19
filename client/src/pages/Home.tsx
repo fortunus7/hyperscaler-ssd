@@ -10,6 +10,7 @@ import {
   ChevronRight,
   CircleAlert,
   ExternalLink,
+  FileSpreadsheet,
   Filter,
   Gauge,
   HardDrive,
@@ -26,7 +27,6 @@ import {
 } from "lucide-react";
 import {
   profiles,
-  requirementLens,
   sources,
   type HyperscalerProfile,
   type Region,
@@ -34,6 +34,23 @@ import {
 import { CandidateWorkbench } from "@/components/CandidateWorkbench";
 import { HardwareMatcher } from "@/components/HardwareMatcher";
 import { ServerWorkbench } from "@/components/ServerWorkbench";
+import { profileDriveSummary } from "@/lib/profilePresentation";
+import {
+  downloadProfileComparisonCsv,
+  profileComparisonAxes,
+} from "@/lib/profileComparisonExport";
+import {
+  buildSsdRequirementLens,
+  downloadSsdRequirementCsv,
+  ssdRequirementStatusLabels,
+  type SsdRequirementStatus,
+} from "@/lib/ssdRequirementLens";
+import {
+  filterSourceRegistry,
+  sourceRegistryDocuments,
+  sourceRegistryStats,
+  type SourceRegistryCategory,
+} from "@/lib/sourceRegistry";
 import { updateProfileSelection } from "@shared/profileSelection";
 
 type MetricKey = "all" | "density" | "iops" | "network" | "coverage";
@@ -41,6 +58,14 @@ type MetricKey = "all" | "density" | "iops" | "network" | "coverage";
 const regionStyle: Record<Region, string> = {
   US: "border-[#315A7D]/25 bg-[#315A7D]/10 text-[#244660]",
   CN: "border-[#5F8E84]/25 bg-[#5F8E84]/10 text-[#315e54]",
+};
+
+const sourceCategoryLabels: Record<"all" | SourceRegistryCategory, string> = {
+  all: "전체",
+  hyperscaler: "클라우드 프로파일",
+  server: "서버",
+  ssd: "SSD",
+  "cross-validation": "교차검증",
 };
 
 function sourceLabel(ids: number[]) {
@@ -52,6 +77,21 @@ function coverageStyle(coverage: HyperscalerProfile["coverage"]) {
   if (coverage === "B") return "bg-[#B79754] text-[#17202A]";
   return "bg-[#A2A6A2] text-white";
 }
+
+const lensStatusPresentation: Record<
+  SsdRequirementStatus,
+  { className: string }
+> = {
+  baseline: {
+    className: "border-[#5F8E84]/35 bg-[#5F8E84]/14 text-[#BFE2D8]",
+  },
+  verify: {
+    className: "border-[#B79754]/40 bg-[#B79754]/14 text-[#E7D4A7]",
+  },
+  request: {
+    className: "border-[#E65B32]/40 bg-[#E65B32]/13 text-[#F3B39F]",
+  },
+};
 
 function metricValue(profile: HyperscalerProfile, metric: MetricKey) {
   if (metric === "density") return profile.totalStorageTB ?? -1;
@@ -83,6 +123,12 @@ export default function Home() {
   const profileDetailRef = useRef<HTMLElement>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [comparisonNotice, setComparisonNotice] = useState("");
+  const [comparisonExportNotice, setComparisonExportNotice] = useState("");
+  const [lensExportNotice, setLensExportNotice] = useState("");
+  const [sourceCategory, setSourceCategory] = useState<
+    "all" | SourceRegistryCategory
+  >("all");
+  const [sourceQuery, setSourceQuery] = useState("");
 
   const visibleProfiles = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
@@ -108,6 +154,19 @@ export default function Home() {
   );
   const activeProfile =
     profiles.find(profile => profile.id === activeProfileId) ?? profiles[0];
+  const activeRequirementLens = useMemo(
+    () => buildSsdRequirementLens(activeProfile),
+    [activeProfile]
+  );
+  const visibleSourceDocuments = useMemo(
+    () =>
+      filterSourceRegistry(
+        sourceRegistryDocuments,
+        sourceCategory,
+        sourceQuery
+      ),
+    [sourceCategory, sourceQuery]
+  );
   const toggleProfile = (id: string) => {
     setSelectedIds(current => {
       const result = updateProfileSelection(current, id, 3);
@@ -122,6 +181,18 @@ export default function Home() {
   const revealProfile = (id: string) => {
     setActiveProfileId(id);
     setProfileRevealRequest(current => current + 1);
+  };
+  const exportComparison = () => {
+    if (!downloadProfileComparisonCsv(selectedProfiles)) return;
+    setComparisonExportNotice(
+      `${selectedProfiles.length}개 프로파일 비교표를 Excel용 CSV로 저장했습니다.`
+    );
+  };
+  const exportSsdRequirementLens = () => {
+    downloadSsdRequirementCsv(activeProfile);
+    setLensExportNotice(
+      `${activeProfile.provider} ${activeProfile.profile} SSD 검증표를 Excel용 CSV로 저장했습니다.`
+    );
   };
 
   useEffect(() => {
@@ -194,7 +265,7 @@ export default function Home() {
             className="flex items-center gap-3 rounded-sm px-3 py-2.5 text-sm text-[#C9D3D9] transition hover:bg-white/8 hover:text-white"
           >
             <HardDrive className="h-4 w-4" />
-            SSD Lens
+            SSD 검증표
           </a>
           <a
             href="#sources"
@@ -292,7 +363,7 @@ export default function Home() {
               href="#requirements"
               className="flex min-h-11 items-center rounded-sm bg-[#F4F0E7] px-3 py-3"
             >
-              SSD Lens
+              SSD 검증표
             </a>
             <a
               onClick={() => setIsMenuOpen(false)}
@@ -522,18 +593,17 @@ export default function Home() {
                     aria-controls="profile-detail"
                     className="w-full border-t border-[#17202A]/10 px-5 py-3 text-left transition hover:bg-[#F6F2E9]"
                   >
-                    <div
-                      className="mb-3 flex items-center gap-1.5"
-                      aria-label="프로토콜 리본"
-                    >
-                      <span className="h-px w-5 bg-[#17202A]/30" />
-                      <span className="h-1.5 w-1.5 rounded-full bg-[#E65B32]" />
-                      {Array.from({ length: 7 }).map((_, ribbonIndex) => (
-                        <span
-                          key={ribbonIndex}
-                          className={`h-1 flex-1 ${ribbonIndex < Math.min(profile.drives ?? 2, 7) ? (profile.region === "US" ? "bg-[#315A7D]" : "bg-[#5F8E84]") : "bg-[#17202A]/10"}`}
+                    <div className="mb-3 flex min-h-10 items-center justify-between gap-3 border-l-2 border-[#315A7D] bg-[#315A7D]/7 px-3 py-2">
+                      <span className="flex items-center gap-2 text-[11px] font-medium text-[#59636b]">
+                        <HardDrive
+                          className="h-3.5 w-3.5 text-[#315A7D]"
+                          aria-hidden="true"
                         />
-                      ))}
+                        로컬 SSD 구성
+                      </span>
+                      <span className="text-right font-mono-ui text-[11px] font-semibold text-[#17202A]">
+                        {profileDriveSummary(profile)}
+                      </span>
                     </div>
                     <div className="grid grid-cols-3 gap-3">
                       <div>
@@ -621,13 +691,32 @@ export default function Home() {
                   선택한 프로파일을 같은 문장으로 읽습니다.
                 </h2>
               </div>
-              <div className="flex items-center gap-2 rounded-sm border border-[#17202A]/13 bg-[#FFFDF8] px-3 py-2 text-xs text-[#59636b]">
-                <Info className="h-4 w-4 text-[#E65B32]" />
-                최대 3개까지 비교 · 빈 값은 미공개
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex min-h-11 items-center gap-2 rounded-sm border border-[#17202A]/13 bg-[#FFFDF8] px-3 py-2 text-xs text-[#59636b]">
+                  <Info className="h-4 w-4 text-[#E65B32]" />
+                  최대 3개까지 비교 · 빈 값은 미공개
+                </div>
+                <button
+                  type="button"
+                  onClick={exportComparison}
+                  disabled={!selectedProfiles.length}
+                  className="inline-flex min-h-11 items-center gap-2 rounded-sm bg-[#315A7D] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#244660] disabled:cursor-not-allowed disabled:bg-[#A2A6A2]"
+                >
+                  <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />
+                  Excel로 저장
+                </button>
               </div>
             </div>
 
-            <div className="mt-6 overflow-x-auto border border-[#17202A]/14 bg-[#FFFDF8] surface-shadow">
+            <p
+              className="mt-2 min-h-4 text-right text-[11px] text-[#315E54]"
+              role="status"
+              aria-live="polite"
+            >
+              {comparisonExportNotice}
+            </p>
+
+            <div className="mt-4 overflow-x-auto border border-[#17202A]/14 bg-[#FFFDF8] surface-shadow">
               <table className="min-w-[850px] w-full border-collapse text-left">
                 <thead>
                   <tr className="border-b border-[#17202A]/12 bg-[#F7F4ED]">
@@ -669,50 +758,20 @@ export default function Home() {
                   </tr>
                 </thead>
                 <tbody>
-                  {[
-                    ["SERVER PLATFORM", (p: HyperscalerProfile) => p.cpu],
-                    [
-                      "HOST / I-O PATH",
-                      (p: HyperscalerProfile) => p.architecture,
-                    ],
-                    [
-                      "LOCAL SSD LAYOUT",
-                      (p: HyperscalerProfile) => p.localStorage,
-                    ],
-                    [
-                      "READ / WRITE IOPS",
-                      (p: HyperscalerProfile) =>
-                        `${p.readIopsM ? `${p.readIopsM}M` : "공개 없음"} / ${p.writeIopsM ? `${p.writeIopsM}M` : "공개 없음"}`,
-                    ],
-                    [
-                      "THROUGHPUT",
-                      (p: HyperscalerProfile) =>
-                        `${p.readThroughput} · ${p.writeThroughput}`,
-                    ],
-                    [
-                      "NETWORK CEILING",
-                      (p: HyperscalerProfile) => p.networkLabel,
-                    ],
-                    [
-                      "PERSISTENCE MODEL",
-                      (p: HyperscalerProfile) => p.persistence,
-                    ],
-                  ].map(([label, render]) => (
+                  {profileComparisonAxes.map(axis => (
                     <tr
-                      key={label as string}
+                      key={axis.label}
                       className="border-b border-[#17202A]/9 last:border-0"
                     >
                       <td className="bg-[#FBF9F3] px-5 py-4 font-mono-ui text-[10px] font-medium tracking-[0.1em] text-[#6B6D69]">
-                        {label as string}
+                        {axis.label}
                       </td>
                       {selectedProfiles.map(profile => (
                         <td
                           key={profile.id}
                           className="border-l border-[#17202A]/10 px-5 py-4 text-xs leading-5 text-[#34414D]"
                         >
-                          {(render as (p: HyperscalerProfile) => string)(
-                            profile
-                          )}
+                          {axis.value(profile)}
                         </td>
                       ))}
                     </tr>
@@ -862,7 +921,7 @@ export default function Home() {
                 href="#requirements"
                 className="mt-7 inline-flex items-center gap-2 border-b border-[#E65B32] pb-1 text-xs font-semibold text-white"
               >
-                요구사항 렌즈 보기{" "}
+                SSD 검증표 만들기{" "}
                 <ArrowUpRight className="h-3.5 w-3.5 text-[#E65B32]" />
               </a>
             </div>
@@ -874,44 +933,133 @@ export default function Home() {
           className="scroll-mt-16 border-y border-[#17202A]/12 bg-[#17202A] px-4 py-10 text-[#FFFDF8] sm:px-7 lg:px-10 lg:py-12"
         >
           <div className="mx-auto max-w-[1380px]">
-            <div className="grid gap-7 lg:grid-cols-[minmax(0,4fr)_minmax(0,6fr)] lg:items-end">
+            <div className="grid gap-7 lg:grid-cols-[minmax(0,5fr)_minmax(0,5fr)] lg:items-end">
               <div>
                 <p className="font-mono-ui text-[10px] tracking-[.16em] text-[#F3A58C]">
-                  06 · SSD REQUIREMENT LENS
+                  06 · SSD VALIDATION LENS
                 </p>
                 <h2 className="font-display mt-3 text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
-                  조달표에 추가해야 할<br />네 가지 질문.
+                  공개 프로파일을
+                  <br />
+                  검증표로 바꿉니다.
                 </h2>
               </div>
-              <p className="max-w-2xl text-sm leading-7 text-[#C8D2D7]">
-                아래 항목은 비공개 하이퍼스케일러 조달 조건을 주장하지 않습니다.
-                공개 프로파일에서 확인되는 플랫폼 신호를 SSD 제안·검증 항목으로
-                번역한 프레임입니다.
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                <label className="text-xs font-semibold text-[#DCE4E7]">
+                  기준 프로파일
+                  <select
+                    value={activeProfile.id}
+                    onChange={event => {
+                      setActiveProfileId(event.target.value);
+                      setLensExportNotice("");
+                    }}
+                    className="mt-1.5 h-11 w-full rounded-sm border border-white/18 bg-[#202D39] px-3 text-xs text-white outline-none focus:border-[#E65B32]"
+                  >
+                    {profiles.map(profile => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.provider} · {profile.profile}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={exportSsdRequirementLens}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-sm bg-[#E65B32] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#C94A24]"
+                >
+                  <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />
+                  검증표 CSV 저장
+                </button>
+              </div>
+            </div>
+            <div className="mt-6 flex flex-col gap-3 border-y border-white/12 py-4 text-xs leading-6 text-[#C8D2D7] sm:flex-row sm:items-center sm:justify-between">
+              <p className="max-w-3xl">
+                <strong className="text-white">
+                  {activeProfile.provider} · {activeProfile.profile}
+                </strong>
+                의 공개값은 기준선으로, 미공개값은 공급사 문서 요청 항목으로
+                변환했습니다. 공개 호스트 성능은 드라이브 수로 균등 환산한
+                참고값이며 실제 합격선은 동일 조건 PoC에서 확정합니다.
+              </p>
+              <p
+                className="min-h-5 shrink-0 font-medium text-[#BFE2D8]"
+                role="status"
+                aria-live="polite"
+              >
+                {lensExportNotice}
               </p>
             </div>
-            <div className="mt-8 grid gap-px overflow-hidden border border-white/14 bg-white/14 sm:grid-cols-2">
-              {requirementLens.map((lens, index) => (
-                <article
-                  key={lens.label}
-                  className="bg-[#17202A] p-6 transition hover:bg-[#20303D]"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono-ui text-[10px] text-[#F3A58C]">
-                      0{index + 1}
-                    </span>
-                    <ChevronRight className="h-4 w-4 text-[#E65B32]" />
-                  </div>
-                  <h3 className="font-display mt-8 text-xl font-semibold">
-                    {lens.label}
-                  </h3>
-                  <p className="mt-3 text-sm leading-6 text-[#C8D2D7]">
-                    {lens.desc}
-                  </p>
-                  <p className="font-mono-ui mt-7 border-t border-white/12 pt-3 text-[10px] leading-5 tracking-[.03em] text-[#8FA6B3]">
-                    {lens.emphasis}
-                  </p>
-                </article>
-              ))}
+            <div className="mt-6 grid gap-3 xl:grid-cols-2">
+              {activeRequirementLens.map((lens, index) => {
+                const status = lensStatusPresentation[lens.status];
+                return (
+                  <article
+                    key={lens.id}
+                    className="border border-white/14 bg-[#1B2834] p-5 transition hover:border-white/25 hover:bg-[#20303D]"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-mono-ui text-[10px] tracking-[.12em] text-[#F3A58C]">
+                        0{index + 1}
+                      </span>
+                      <span
+                        className={`rounded-full border px-2.5 py-1 font-mono-ui text-[9px] ${status.className}`}
+                      >
+                        {ssdRequirementStatusLabels[lens.status]}
+                      </span>
+                    </div>
+                    <h3 className="font-display mt-4 text-xl font-semibold">
+                      {lens.label}
+                    </h3>
+                    <dl className="mt-4 space-y-4 text-xs leading-6">
+                      <div>
+                        <dt className="font-mono-ui text-[9px] tracking-[.12em] text-[#8FA6B3]">
+                          공개 기준
+                        </dt>
+                        <dd className="mt-1 font-medium text-white">
+                          {lens.publicSignal}
+                        </dd>
+                      </div>
+                      <div className="border-t border-white/10 pt-3">
+                        <dt className="font-mono-ui text-[9px] tracking-[.12em] text-[#8FA6B3]">
+                          제안서 요구
+                        </dt>
+                        <dd className="mt-1 text-[#D7E0E5]">
+                          {lens.proposalRequirement}
+                        </dd>
+                      </div>
+                      <div className="border-t border-white/10 pt-3">
+                        <dt className="font-mono-ui text-[9px] tracking-[.12em] text-[#8FA6B3]">
+                          확인 기준
+                        </dt>
+                        <dd className="mt-1 text-[#D7E0E5]">
+                          {lens.acceptanceCriteria}
+                        </dd>
+                      </div>
+                    </dl>
+                    <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/10 pt-3">
+                      <span className="font-mono-ui text-[9px] tracking-[.1em] text-[#8FA6B3]">
+                        REFERENCE
+                      </span>
+                      {lens.sourceIds.map(sourceId => {
+                        const source = sources.find(
+                          item => item.id === sourceId
+                        );
+                        return source ? (
+                          <a
+                            key={source.id}
+                            href={source.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded-sm border border-white/14 px-2 py-1 font-mono-ui text-[9px] text-[#F3B39F] hover:border-[#E65B32] hover:text-white"
+                          >
+                            [{source.id}] {source.publisher} ↗
+                          </a>
+                        ) : null;
+                      })}
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           </div>
         </section>
@@ -992,49 +1140,168 @@ export default function Home() {
           className="scroll-mt-16 border-t border-[#17202A]/12 bg-[#EAE5DB]/55 px-4 py-10 sm:px-7 lg:px-10"
         >
           <div className="mx-auto max-w-[1380px]">
-            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+            <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
               <div>
                 <p className="font-mono-ui text-[10px] font-medium tracking-[0.16em] text-[#E65B32]">
                   08 · SOURCE REGISTER
                 </p>
                 <h2 className="font-display mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
-                  수치의 출발점.
+                  모든 수치의 출발점.
                 </h2>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-[#59636b]">
+                  클라우드 프로파일과 서버·SSD 카탈로그가 실제로 참조한 공식
+                  문서를 URL 기준으로 합쳤습니다. 같은 문서를 쓰는 제품은 연결
+                  수로 간결하게 표시합니다.
+                </p>
               </div>
-              <div className="flex items-center gap-2 text-xs text-[#6B6D69]">
+              <div className="grid grid-cols-2 gap-px border border-[#17202A]/12 bg-[#17202A]/12 text-center sm:grid-cols-4">
+                {[
+                  ["고유 문서", sourceRegistryStats.uniqueDocuments],
+                  ["제품 레코드", sourceRegistryStats.productRecords],
+                  ["출처 연결", sourceRegistryStats.coveredProductRecords],
+                  ["프로파일", sourceRegistryStats.coveredProfileRecords],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="min-w-[96px] bg-[#FFFDF8] px-3 py-2.5"
+                  >
+                    <p className="font-mono-ui text-lg font-semibold text-[#17202A]">
+                      {value}
+                    </p>
+                    <p className="text-[10px] text-[#6B6D69]">{label}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-col gap-3 border-y border-[#17202A]/12 py-4 lg:flex-row lg:items-center lg:justify-between">
+              <div
+                className="flex flex-wrap gap-2"
+                role="group"
+                aria-label="출처 분류 필터"
+              >
+                {(
+                  Object.keys(sourceCategoryLabels) as Array<
+                    "all" | SourceRegistryCategory
+                  >
+                ).map(category => (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => setSourceCategory(category)}
+                    aria-pressed={sourceCategory === category}
+                    className={`border px-3 py-2 text-xs transition ${
+                      sourceCategory === category
+                        ? "border-[#17202A] bg-[#17202A] text-white"
+                        : "border-[#17202A]/15 bg-[#FFFDF8] text-[#59636b] hover:border-[#315A7D]/55"
+                    }`}
+                  >
+                    {sourceCategoryLabels[category]}
+                  </button>
+                ))}
+              </div>
+              <label className="flex min-w-0 items-center gap-2 border border-[#17202A]/15 bg-[#FFFDF8] px-3 py-2 lg:w-[360px]">
+                <Search className="h-4 w-4 shrink-0 text-[#6B6D69]" />
+                <span className="sr-only">출처 문서 검색</span>
+                <input
+                  value={sourceQuery}
+                  onChange={event => setSourceQuery(event.target.value)}
+                  placeholder="문서·제조사·제품명·URL 검색"
+                  className="w-full bg-transparent text-sm outline-none placeholder:text-[#92958F]"
+                />
+              </label>
+            </div>
+
+            <div className="mt-4 flex items-center justify-between text-xs text-[#6B6D69]">
+              <p role="status" aria-live="polite">
+                {visibleSourceDocuments.length} /{" "}
+                {sourceRegistryStats.uniqueDocuments}개 문서
+              </p>
+              <div className="flex items-center gap-2">
                 <CircleAlert className="h-4 w-4 text-[#E65B32]" />
                 문서·리전·SKU 변경 시 재검증 필요
               </div>
             </div>
-            <div className="mt-6 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-              {sources.map(source => (
-                <a
-                  key={source.id}
-                  href={source.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="group flex min-h-[104px] flex-col justify-between border border-[#17202A]/12 bg-[#FFFDF8] p-4 transition hover:-translate-y-0.5 hover:border-[#315A7D]/55 hover:shadow-md"
+
+            {visibleSourceDocuments.length > 0 && (
+              <div className="mt-3 overflow-hidden border border-[#17202A]/14 bg-[#FFFDF8]">
+                <div
+                  className="hidden min-h-9 grid-cols-[150px_210px_minmax(0,1fr)_110px_20px] items-center gap-3 border-b border-[#17202A]/12 bg-[#F4F0E7] px-4 font-mono-ui text-[9px] tracking-[.1em] text-[#6B6D69] md:grid"
+                  aria-hidden="true"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="font-mono-ui text-[11px] text-[#E65B32]">
-                      [{source.id}]
-                    </span>
-                    <ExternalLink className="h-4 w-4 text-[#7A7D79] transition group-hover:text-[#315A7D]" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-[#6B6D69]">{source.publisher}</p>
-                    <p className="mt-1 text-sm font-semibold leading-5 text-[#17202A]">
-                      {source.label}
-                    </p>
-                  </div>
-                </a>
-              ))}
-            </div>
+                  <span>REFERENCE</span>
+                  <span>TYPE / PUBLISHER</span>
+                  <span>DOCUMENT</span>
+                  <span>LINKED</span>
+                  <span />
+                </div>
+                <ul className="divide-y divide-[#17202A]/10">
+                  {visibleSourceDocuments.map(document => {
+                    const linkedRecordLabels = document.linkedRecords
+                      .map(item => item.label)
+                      .join(", ");
+                    return (
+                      <li key={document.url}>
+                        <a
+                          href={document.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={document.label}
+                          className="group grid min-h-16 grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 px-4 py-3 transition hover:bg-[#F4F0E7]/75 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#315A7D] md:grid-cols-[150px_210px_minmax(0,1fr)_110px_20px] md:items-center md:py-2.5"
+                        >
+                          <span className="col-start-1 row-start-1 font-mono-ui text-[10px] text-[#C94A24] md:col-auto md:row-auto">
+                            {document.id}
+                            {document.sourceIds.length > 0
+                              ? ` · ${sourceLabel(document.sourceIds)}`
+                              : ""}
+                          </span>
+                          <span className="col-start-1 row-start-3 flex min-w-0 items-center gap-2 text-[11px] text-[#59636b] md:col-auto md:row-auto md:block">
+                            <span className="truncate font-medium text-[#315A7D] md:block">
+                              {document.categories
+                                .map(category => sourceCategoryLabels[category])
+                                .join(" · ")}
+                            </span>
+                            <span className="truncate md:mt-0.5 md:block">
+                              {document.publisher}
+                            </span>
+                          </span>
+                          <span className="col-span-2 row-start-2 min-w-0 text-sm font-semibold leading-5 text-[#17202A] md:col-auto md:row-auto md:truncate">
+                            {document.label}
+                          </span>
+                          <span
+                            className="col-start-2 row-start-3 justify-self-end text-[11px] text-[#6B6D69] md:col-auto md:row-auto md:justify-self-start"
+                            title={linkedRecordLabels || "교차검증 전용 문서"}
+                            aria-label={
+                              linkedRecordLabels
+                                ? `연결된 레코드 ${document.linkedRecords.length}개: ${linkedRecordLabels}`
+                                : "교차검증 전용 문서"
+                            }
+                          >
+                            {document.linkedRecords.length > 0
+                              ? `연결 ${document.linkedRecords.length}개`
+                              : "교차검증"}
+                          </span>
+                          <ExternalLink className="col-start-2 row-start-1 h-4 w-4 justify-self-end text-[#8A8D88] transition group-hover:text-[#315A7D] md:col-auto md:row-auto" />
+                        </a>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+            {visibleSourceDocuments.length === 0 && (
+              <div
+                className="mt-3 border border-dashed border-[#17202A]/20 bg-[#FFFDF8]/60 px-5 py-10 text-center text-sm text-[#6B6D69]"
+                role="status"
+              >
+                조건에 맞는 출처 문서가 없습니다.
+              </div>
+            )}
             <div className="mt-6 flex flex-col justify-between gap-3 border-t border-[#17202A]/12 pt-5 text-xs leading-5 text-[#6B6D69] sm:flex-row">
               <p>
-                방법론: 공개된 스토리지 최적화 인스턴스를 대표 프로파일로
-                정규화했습니다. 총 용량은 원문 단위를 보존하되, 카드 순서를 위한
-                TB 수치는 화면용 환산값입니다.
+                방법론: 공식 제품 페이지·데이터시트·QuickSpecs를 우선하며,
+                교차검증 문서는 별도 분류했습니다. 제품 레코드는 출처 URL과 직접
+                연결되며 동일 URL은 한 번만 표시됩니다.
               </p>
               <p className="font-mono-ui whitespace-nowrap text-[10px] tracking-[.08em]">
                 SIGNAL LEDGER · RESEARCH VIEW

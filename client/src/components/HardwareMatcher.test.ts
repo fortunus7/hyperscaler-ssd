@@ -3,11 +3,12 @@ import { formatCatalogDate, pinActiveItem } from "./HardwareMatcher";
 import { profileDetailScrollBehavior } from "../pages/Home";
 
 describe("HardwareMatcher list state", () => {
-  it("keeps a filtered-out active item visible exactly once", () => {
+  it("pins the active item only when it belongs to the filtered result", () => {
     const active = { id: "active", label: "Active" };
     const visible = [{ id: "visible", label: "Visible" }];
 
-    expect(pinActiveItem(visible, active)).toEqual([active, visible[0]]);
+    expect(pinActiveItem(visible, active)).toEqual(visible);
+    expect(pinActiveItem([], active)).toEqual([]);
     expect(pinActiveItem([active, visible[0]], active)).toEqual([
       active,
       visible[0],

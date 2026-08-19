@@ -3,10 +3,10 @@ import { catalogStats, serverCatalog, ssdCatalog } from "./hardwareCatalog";
 
 describe("official hardware catalog", () => {
   it("keeps the researched minimum product coverage and official provenance", () => {
-    expect(serverCatalog).toHaveLength(16);
-    expect(ssdCatalog).toHaveLength(14);
-    expect(catalogStats.serverVendors).toBeGreaterThanOrEqual(5);
-    expect(catalogStats.ssdVendors).toBeGreaterThanOrEqual(6);
+    expect(serverCatalog.length).toBeGreaterThanOrEqual(28);
+    expect(ssdCatalog.length).toBeGreaterThanOrEqual(30);
+    expect(catalogStats.serverVendors).toBeGreaterThanOrEqual(9);
+    expect(catalogStats.ssdVendors).toBeGreaterThanOrEqual(10);
     for (const item of [...serverCatalog, ...ssdCatalog]) {
       expect(item.sourceUrl).toMatch(/^https:\/\//);
       expect(item.sourceRetrievedAt).toBe("2026-08-19");
@@ -45,6 +45,38 @@ describe("official hardware catalog", () => {
       sourceUrl:
         "https://www.supermicro.com/en/products/system/datasheet/SYS-221H-TNR",
     });
+
+    const rx2530 = serverCatalog.find(
+      ({ id }) => id === "fujitsu-primergy-rx2530-m7"
+    );
+    expect(rx2530).toMatchObject({
+      cpu: "4th/5th Gen Intel Xeon Scalable",
+      maxMemoryTb: 8,
+      storageOptions: [
+        {
+          envelope: "2.5-inch",
+          interfaces: [],
+          bayCount: 10,
+          pcieGen: null,
+        },
+      ],
+    });
+
+    const rx2540 = serverCatalog.find(
+      ({ id }) => id === "fujitsu-primergy-rx2540-m7"
+    );
+    expect(rx2540).toMatchObject({
+      cpu: "4th/5th Gen Intel Xeon Scalable",
+      maxMemoryTb: 8,
+      storageOptions: [
+        {
+          envelope: "2.5-inch",
+          interfaces: [],
+          bayCount: 24,
+          pcieGen: null,
+        },
+      ],
+    });
   });
 
   it("keeps catalog identifiers, provenance, statistics, and storage shapes valid", () => {
@@ -55,6 +87,12 @@ describe("official hardware catalog", () => {
       "lenovopress.lenovo.com",
       "www.supermicro.com",
       "www.nvidia.com",
+      "www.cisco.com",
+      "mkt-europe.global.fujitsu.com",
+      "sp.ts.fujitsu.com",
+      "download.gigabyte.com",
+      "www.gigabyte.com",
+      "servers.asus.com",
       "semiconductor.samsung.com",
       "www.solidigm.com",
       "americas.kioxia.com",
@@ -62,6 +100,9 @@ describe("official hardware catalog", () => {
       "www.sandisk.com",
       "product.skhynix.com",
       "en.dapustor.com",
+      "www.kingston.com",
+      "www.memblaze.com",
+      "www.seagate.com",
     ]);
     const envelopes = new Set(["2.5-inch", "E1.S", "E3.S", "M.2"]);
     const interfaces = new Set(["U.2", "U.3", "E1.S", "E3.S", "M.2"]);
@@ -105,5 +146,23 @@ describe("official hardware catalog", () => {
     expect(
       ssdCatalog.find(item => item.id === "dapustor-h3100-u2-1-6tb")
     ).toMatchObject({ activePowerW: 7.5, powerBasis: "typical" });
+  });
+
+  it("covers current server and SSD vendors, form factors, and PCIe generations", () => {
+    const serverVendors = new Set(serverCatalog.map(item => item.manufacturer));
+    const ssdVendors = new Set(ssdCatalog.map(item => item.manufacturer));
+    for (const vendor of ["Cisco", "FUJITSU", "GIGABYTE", "ASUS"]) {
+      expect(serverVendors.has(vendor)).toBe(true);
+    }
+    for (const vendor of ["Kingston", "Memblaze", "Seagate"]) {
+      expect(ssdVendors.has(vendor)).toBe(true);
+    }
+    expect(new Set(ssdCatalog.map(item => item.envelope))).toEqual(
+      new Set(["2.5-inch", "E1.S", "E3.S", "M.2"])
+    );
+    const pcieGenerations = new Set(ssdCatalog.map(item => item.pcieGen));
+    for (const generation of [3, 4, 5]) {
+      expect(pcieGenerations.has(generation)).toBe(true);
+    }
   });
 });
